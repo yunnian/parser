@@ -200,6 +200,7 @@ import (
 	over			"OVER"
 	packKeys		"PACK_KEYS"
 	partition		"PARTITION"
+	parser          "PARSER"
 	percentRank		"PERCENT_RANK"
 	precisionType		"PRECISION"
 	primary			"PRIMARY"
@@ -1003,6 +1004,8 @@ import (
 	WhenClauseList		"When clause list"
 	WithReadLockOpt		"With Read Lock opt"
 	WithGrantOptionOpt	"With Grant Option opt"
+	WithParser          "with parser indent"
+	WithParserIndexOptionList "with parser indent and index option list"
 	WithValidation		"with validation"
 	WithValidationOpt	"optional with validation"
 	ElseOpt			"Optional else clause"
@@ -2662,6 +2665,7 @@ NumLiteral:
  * index_option:
  *     KEY_BLOCK_SIZE [=] value
  *   | index_type
+ *   | WITH PARSER parser_name
  *   | COMMENT 'string'
  *
  * index_type:
@@ -2674,20 +2678,39 @@ NumLiteral:
  *     LOCK [=] {DEFAULT | NONE | SHARED | EXCLUSIVE}
  *******************************************************************************************/
 CreateIndexStmt:
-	"CREATE" IndexKeyTypeOpt "INDEX" IfNotExists Identifier IndexTypeOpt "ON" TableName '(' IndexColNameList ')' IndexOptionList IndexLockAndAlgorithmOpt
+	"CREATE" IndexKeyTypeOpt "INDEX" IfNotExists Identifier IndexTypeOpt "ON" TableName '(' IndexColNameList ')' WithParserIndexOptionList IndexLockAndAlgorithmOpt
 	{
-		var indexOption *ast.IndexOption
+		var parserIndexOption *ast.WithParserIndexOptionList
 		if $12 != nil {
-			indexOption = $12.(*ast.IndexOption)
-			if indexOption.Tp == model.IndexTypeInvalid {
-				if $6 != nil {
-					indexOption.Tp = $6.(model.IndexType)
-				}
-			}
+            parserIndexOption = $12.(*ast.WithParserIndexOptionList)
+            if (parserIndexOption.IndexOption != nil){
+                if parserIndexOption.IndexOption.Tp == model.IndexTypeInvalid {
+                    if $6 != nil {
+                        parserIndexOption.IndexOption.Tp = $6.(model.IndexType)
+
+
+                    }
+                }
+            }else{
+                if $6 != nil {
+
+                    parserIndexOption = &ast.WithParserIndexOptionList{
+                        IndexOption : &ast.IndexOption{
+                            Tp : $6.(model.IndexType),
+
+                        },
+                    }
+            	}
+
+            }
 		} else {
-			indexOption = &ast.IndexOption{}
-			if $6 != nil {
-				indexOption.Tp = $6.(model.IndexType)
+		    if $6 != nil {
+                parserIndexOption = &ast.WithParserIndexOptionList{
+                    IndexOption : &ast.IndexOption{
+                        Tp : $6.(model.IndexType),
+
+                    },
+                }
 			}
 		}
 		var indexLockAndAlgorithm *ast.IndexLockAndAlgorithm
@@ -2697,12 +2720,13 @@ CreateIndexStmt:
 				indexLockAndAlgorithm = nil
 			}
 		}
+
 		$$ = &ast.CreateIndexStmt{
 			IfNotExists:   $4.(bool),
 			IndexName:     $5,
 			Table:         $8.(*ast.TableName),
 			IndexColNames: $10.([]*ast.IndexColName),
-			IndexOption:   indexOption,
+			ParserIndexOption: parserIndexOption,
 			KeyType:       $2.(ast.IndexKeyType),
 			LockAlg:       indexLockAndAlgorithm,
 		}
@@ -2724,6 +2748,52 @@ IndexColNameList:
 	{
 		$$ = append($1.([]*ast.IndexColName), $3.(*ast.IndexColName))
 	}
+
+WithParser:
+   "WITH" "PARSER" Identifier
+    {
+        $$ =  $3
+    }
+
+
+WithParserIndexOptionList:
+    {
+        $$ = nil
+    }
+
+|  IndexOptionList
+    {
+        $$ = &ast.WithParserIndexOptionList{
+            IndexOption : $1.(*ast.IndexOption),
+        }
+    }
+
+|   WithParser IndexOptionList
+    {
+        if $2 == nil {
+            $$ = &ast.WithParserIndexOptionList{
+                WithParserName : $1.(string),
+            }
+        }else {
+            $$ = &ast.WithParserIndexOptionList{
+                WithParserName : $1.(string),
+                IndexOption : $2.(*ast.IndexOption),
+            }
+        }
+    }
+|   IndexOptionList WithParser
+    {
+        if $1 == nil {
+            $$ = &ast.WithParserIndexOptionList{
+                WithParserName : $2.(string),
+            }
+        }else {
+            $$ = &ast.WithParserIndexOptionList{
+                WithParserName : $2.(string),
+                IndexOption : $1.(*ast.IndexOption),
+            }
+        }
+    }
 
 IndexLockAndAlgorithmOpt:
 	{
@@ -2757,6 +2827,7 @@ IndexLockAndAlgorithmOpt:
 			AlgorithmTp:	$1.(ast.AlgorithmType),
 		}
 	}
+
 
 IndexKeyTypeOpt:
 	{

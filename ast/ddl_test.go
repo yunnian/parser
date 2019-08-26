@@ -119,7 +119,7 @@ func (ts *testDDLSuite) TestDDLIndexOption(c *C) {
 		{"key_block_size=32 using btree comment 'hello'", "KEY_BLOCK_SIZE=32 USING BTREE COMMENT 'hello'"},
 	}
 	extractNodeFunc := func(node Node) Node {
-		return node.(*CreateIndexStmt).IndexOption
+		return node.(*CreateIndexStmt).ParserIndexOption.IndexOption
 	}
 	RunNodeRestoreTest(c, testCases, "CREATE INDEX idx ON t (a) %s", extractNodeFunc)
 }

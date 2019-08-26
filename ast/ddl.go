@@ -1213,6 +1213,43 @@ func (n *CreateViewStmt) Accept(v Visitor) (Node, bool) {
 	return v.Leave(n)
 }
 
+type WithParserIndexOptionList struct {
+	node
+	WithParserName string
+	IndexOption    *IndexOption
+}
+
+// Restore implements Node interface.
+func (n *WithParserIndexOptionList) Restore(ctx *RestoreCtx) error {
+
+	if len(n.WithParserName) > 0 {
+		ctx.WriteKeyWord(" WITH PARSER ")
+		ctx.WriteName(n.WithParserName)
+	}
+
+	if n.IndexOption == nil {
+		return nil
+	}
+
+	if n.IndexOption.Tp != model.IndexTypeInvalid || n.IndexOption.KeyBlockSize > 0 || n.IndexOption.Comment != "" {
+		ctx.WritePlain(" ")
+		if err := n.IndexOption.Restore(ctx); err != nil {
+			return errors.Annotate(err, "An error occurred while restore CreateIndexStmt.IndexOption")
+		}
+	}
+	return nil
+}
+
+// Accept implements Node Accept interface.
+func (n *WithParserIndexOptionList) Accept(v Visitor) (Node, bool) {
+	newNode, skipChildren := v.Enter(n)
+	if skipChildren {
+		return v.Leave(newNode)
+	}
+	n = newNode.(*WithParserIndexOptionList)
+	return v.Leave(n)
+}
+
 // IndexLockAndAlgorithm stores the algorithm option and the lock option.
 type IndexLockAndAlgorithm struct {
 	node
@@ -1272,12 +1309,12 @@ type CreateIndexStmt struct {
 	// see https://mariadb.com/kb/en/library/create-index/
 	IfNotExists bool
 
-	IndexName     string
-	Table         *TableName
-	IndexColNames []*IndexColName
-	IndexOption   *IndexOption
-	KeyType       IndexKeyType
-	LockAlg       *IndexLockAndAlgorithm
+	IndexName         string
+	Table             *TableName
+	IndexColNames     []*IndexColName
+	ParserIndexOption *WithParserIndexOptionList
+	KeyType           IndexKeyType
+	LockAlg           *IndexLockAndAlgorithm
 }
 
 // Restore implements Node interface.
@@ -1312,11 +1349,11 @@ func (n *CreateIndexStmt) Restore(ctx *RestoreCtx) error {
 	}
 	ctx.WritePlain(")")
 
-	if n.IndexOption.Tp != model.IndexTypeInvalid || n.IndexOption.KeyBlockSize > 0 || n.IndexOption.Comment != "" {
-		ctx.WritePlain(" ")
-		if err := n.IndexOption.Restore(ctx); err != nil {
-			return errors.Annotate(err, "An error occurred while restore CreateIndexStmt.IndexOption")
+	if n.ParserIndexOption != nil {
+		if err := n.ParserIndexOption.Restore(ctx); err != nil {
+			return errors.Annotate(err, "An error occurred while restore CreateIndexStmt.ParserIndexOption")
 		}
+
 	}
 
 	if n.LockAlg != nil {
@@ -1348,12 +1385,13 @@ func (n *CreateIndexStmt) Accept(v Visitor) (Node, bool) {
 		}
 		n.IndexColNames[i] = node.(*IndexColName)
 	}
-	if n.IndexOption != nil {
-		node, ok := n.IndexOption.Accept(v)
+
+	if n.ParserIndexOption != nil {
+		node, ok := n.ParserIndexOption.Accept(v)
 		if !ok {
 			return n, false
 		}
-		n.IndexOption = node.(*IndexOption)
+		n.ParserIndexOption = node.(*WithParserIndexOptionList)
 	}
 	if n.LockAlg != nil {
 		node, ok := n.LockAlg.Accept(v)
